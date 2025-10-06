@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "types": []
+  },
+  "extends": "./tsconfig.test.json",
+  "exclude": ["**/*.test.*"]
+}
