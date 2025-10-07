@@ -45,10 +45,9 @@ export const cartesianObject = <T>(
       if (k === max) {
         result.push(newCurrent);
         if (result.length >= limit) {
-          console.warn(
-            `cartesianObjectW1: combination limit (${limit}) reached. Some filter combinations were discarded.`,
+          throw new Error(
+            `cartesianObjectE3: Combination limit exceeded: ${limit}`,
           );
-          return;
         }
       } else {
         generate(newCurrent, k + 1);
