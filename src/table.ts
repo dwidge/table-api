@@ -1,4 +1,5 @@
 import {
+  assert,
   DbQueryOptions,
   dropUndefined,
   hasUndefined,
@@ -6,7 +7,6 @@ import {
 import { Expand, randInt50 } from "@dwidge/randid";
 import { traceAsync } from "@dwidge/trace-js";
 import { asyncMap, topologicalSortItems } from "@dwidge/utils-js";
-import * as assert from "assert";
 import {
   ForeignKeyConstraintError,
   Model,
@@ -493,7 +493,7 @@ export async function setItem<D extends ApiItemDb>(
     assert(result, "setItemE6");
 
     const key = result;
-    assert.equal(key.id, write.id, "setItemE7");
+    assert(key.id === write.id, "setItemE7");
 
     return dropUndefined(toItem({ id: key.id } as Partial<D>));
   } catch (e) {
