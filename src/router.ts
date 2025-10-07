@@ -13,7 +13,11 @@ import { RequestHandler } from "express";
 
 import { ApiItem } from "./ApiItem.js";
 import { Auth } from "./Auth.js";
-import { cartesianObject } from "./cartesianObject.js";
+import {
+  CartesianLimitExceededError,
+  cartesianObject,
+} from "./cartesianObject.js";
+import { PayloadTooLargeError } from "./Error.js";
 import { mapAsync } from "./mapAsync.js";
 import { parseItemArray } from "./parseItemArray.js";
 import { GetItemList, SetItemList } from "./table.js";
@@ -45,7 +49,17 @@ export const getItemsRoute =
       }
     });
 
-    const filterObjects = cartesianObject(queryForFilters, 100);
+    let filterObjects;
+    try {
+      filterObjects = cartesianObject(queryForFilters, 100);
+    } catch (e) {
+      if (e instanceof CartesianLimitExceededError) {
+        throw new PayloadTooLargeError("getItemsRouteE3", {
+          message: e.message,
+        });
+      }
+      throw e;
+    }
 
     const filters = filterObjects.map((filterObject) =>
       tryCatch(

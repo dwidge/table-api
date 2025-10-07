@@ -98,3 +98,22 @@ export class UnprocessableError extends GenericError {
     });
   }
 }
+
+export class PayloadTooLargeError extends GenericError {
+  constructor(
+    code,
+    {
+      stack = "",
+      data = undefined as object | undefined,
+      message = "Payload Too Large",
+    } = {},
+  ) {
+    super(code, {
+      name: "PayloadTooLarge",
+      status: 413,
+      message,
+      stack,
+      data,
+    });
+  }
+}

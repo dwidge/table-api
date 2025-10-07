@@ -1,3 +1,10 @@
+export class CartesianLimitExceededError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CartesianLimitExceededError";
+  }
+}
+
 /**
  * Computes the cartesian product of a record of arrays.
  *
@@ -45,7 +52,7 @@ export const cartesianObject = <T>(
       if (k === max) {
         result.push(newCurrent);
         if (result.length >= limit) {
-          throw new Error(
+          throw new CartesianLimitExceededError(
             `cartesianObjectE3: Combination limit exceeded: ${limit}`,
           );
         }
