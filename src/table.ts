@@ -28,6 +28,15 @@ import { SequelizeError } from "./SequelizeError.js";
 import { ConvertItem } from "./types.js";
 import { unixTimestamp } from "./unixTimestamp.js";
 
+export type CanUserReadItem<D extends ApiItemDb> = (
+  item: D,
+  auth?: Auth,
+) => boolean;
+export type CanUserWriteItem<D extends ApiItemDb> = (
+  item: D,
+  auth?: Auth,
+) => boolean;
+
 export type GetItemList<A> = (
   filter: Partial<A> | Partial<A>[],
   auth?: Auth,
@@ -87,15 +96,32 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     columns?: (keyof A)[],
     auth?: Auth,
   ) => Partial<A> | Promise<Partial<A>>,
+  canUserReadItem?: CanUserReadItem<D>,
+  canUserWriteItem?: CanUserWriteItem<D>,
 ) => ({
   getList: getItemListType(
     toItem,
     toApiItemExtra ?? toApiItem,
     toDbItem,
     model,
+    canUserReadItem,
   ) as GetItemList<A>,
-  setList: setItemListType(toItem, toApiItem, toDbItem, model, randId),
-  delList: delItemListType(toItem, toApiItem, toDbItem, model),
+  setList: setItemListType(
+    toItem,
+    toApiItem,
+    toDbItem,
+    model,
+    randId,
+    canUserWriteItem,
+  ),
+  delList: delItemListType(
+    toItem,
+    toApiItem,
+    toDbItem,
+    model,
+    randId,
+    canUserWriteItem,
+  ),
 });
 
 export const getItemListType = <A extends ApiItem, D extends ApiItemDb>(
@@ -107,6 +133,7 @@ export const getItemListType = <A extends ApiItem, D extends ApiItemDb>(
   ) => Partial<A> | Promise<Partial<A>>,
   toDbItem: ConvertItem<D, Partial<A>>,
   model: ModelStatic<Model<D, D>>,
+  canUserReadItem?: CanUserReadItem<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
@@ -137,6 +164,7 @@ export const getItemListType = <A extends ApiItem, D extends ApiItemDb>(
         (Array.isArray(filter) ? filter : [filter]).map(toDbItem),
         auth,
         options,
+        canUserReadItem,
       );
       return {
         rows: (
@@ -157,6 +185,7 @@ export const getItemListType2 = <A extends ApiItem, D extends ApiItemDb>(
   ) => ConvertItem<Partial<A> | Promise<Partial<A>>, D>,
   toDbItem: (auth?: Auth) => ConvertItem<D | Promise<D>, Partial<A>>,
   model: ModelStatic<Model<D, D>>,
+  canUserReadItem?: CanUserReadItem<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   traceAsync(
@@ -191,6 +220,7 @@ export const getItemListType2 = <A extends ApiItem, D extends ApiItemDb>(
         ),
         auth,
         options,
+        canUserReadItem,
       );
       return {
         rows: (await asyncMap(rows, toApiItem(columns, auth))).map(
@@ -209,6 +239,7 @@ export async function getItemList<D extends ApiItemDb>(
   filter: D[],
   auth?: Auth,
   options?: DbQueryOptions,
+  canUserReadItem: CanUserReadItem<D> = canUserReadItemDefault,
 ): Promise<{ rows: D[]; count: number; offset: number }> {
   auth = Auth.optional().parse(auth);
   const {
@@ -253,7 +284,6 @@ export async function getItemList<D extends ApiItemDb>(
   const findcount = await model
     .findAndCountAll({
       where,
-      // attributes,
       offset,
       limit,
       order: order as Order,
@@ -292,7 +322,6 @@ export async function getItemList<D extends ApiItemDb>(
 
   return {
     rows: allowed,
-    // rows: allowed.map((r) => ({ ...filter, ...r })),
     count: findcount.count,
     offset,
   };
@@ -321,6 +350,7 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
   toDbItem: ConvertItem<D, A>,
   model: ModelStatic<Model<D>>,
   randId?: () => number,
+  canUserWriteItem?: CanUserWriteItem<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
@@ -333,6 +363,7 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
         await z.any().array().parse(items).map(toDbItem),
         auth,
         randId,
+        canUserWriteItem,
       ).catch((e) => {
         throw e instanceof GenericError ? convertErrorData(toApiItem, e) : e;
       })
@@ -354,6 +385,7 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
   toDbItem: ConvertItem<D, A>,
   model: ModelStatic<Model<D>>,
   randId?: () => number,
+  canUserWriteItem?: CanUserWriteItem<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
@@ -371,6 +403,7 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
           .map((v) => ({ ...v, deletedAt: unixTimestamp() })),
         auth,
         randId,
+        canUserWriteItem,
       ).catch((e) => {
         throw e instanceof GenericError ? convertErrorData(toApiItem, e) : e;
       })
@@ -383,12 +416,11 @@ export const setItemList = async <A extends ApiItem, D extends ApiItemDb>(
   items: D[],
   auth?: Auth,
   randId?: () => number,
+  canUserWriteItem?: CanUserWriteItem<D>,
 ): Promise<(D | null)[]> =>
   asyncMap(topologicalSortItems(items), (item) =>
-    setItem(toItem, model, item, auth, randId),
+    setItem(toItem, model, item, auth, randId, canUserWriteItem),
   );
-
-// Todo: setItems in one transaction
 
 export async function setItem<D extends ApiItemDb>(
   toItem: ConvertItem<D>,
@@ -396,6 +428,7 @@ export async function setItem<D extends ApiItemDb>(
   item: D,
   auth?: Auth,
   randId = () => randInt50(),
+  canUserWriteItem: CanUserWriteItem<D> = canUserWriteItemDefault,
 ): Promise<D | null> {
   auth = Auth.optional().parse(auth);
 
@@ -462,15 +495,6 @@ export async function setItem<D extends ApiItemDb>(
     const key = result;
     assert.equal(key.id, write.id, "setItemE7");
 
-    // const check = await getItemList(
-    //   toItem,
-    //   model,
-    //   [{ id: key.id, deletedAt: undefined }] as any[],
-    //   auth
-    // );
-    // assert.equal(check.rows.length, 1, "setItemE8");
-    // return check.rows[0];
-
     return dropUndefined(toItem({ id: key.id } as Partial<D>));
   } catch (e) {
     if (e instanceof NotFoundError) {
@@ -490,7 +514,6 @@ const catchSequelize2 =
   ) =>
   async (error: unknown) => {
     if (error instanceof UniqueConstraintError) {
-      // console.log("catchSequelize2E1", error, value);
       throw new ConflictError(code, { value });
     } else if (error instanceof ForeignKeyConstraintError) {
       const missing = await findMissingForeignKeys(model, value);
@@ -498,8 +521,14 @@ const catchSequelize2 =
     } else throw new SequelizeError(code, error, { value });
   };
 
-const canUserReadItem = <D extends ApiItemDb>(item: D, auth?: Auth): boolean =>
+const canUserReadItemDefault = <D extends ApiItemDb>(
+  item: D,
+  auth?: Auth,
+): boolean =>
   !auth || item.companyId === null || item.companyId === auth.CompanyId;
 
-const canUserWriteItem = <D extends ApiItemDb>(item: D, auth?: Auth): boolean =>
+const canUserWriteItemDefault = <D extends ApiItemDb>(
+  item: D,
+  auth?: Auth,
+): boolean =>
   !auth || (item.companyId !== null && item.companyId === auth.CompanyId);
