@@ -6,12 +6,14 @@ import {
   getObjectFromQueryString,
   GetQueryOptions,
   getQueryStringFromUrl,
+  getValuesFromQueryString,
   toDbQueryOptions,
 } from "@dwidge/query-axios-zod";
 import { RequestHandler } from "express";
 
 import { ApiItem } from "./ApiItem.js";
 import { Auth } from "./Auth.js";
+import { cartesianObject } from "./cartesianObject.js";
 import { mapAsync } from "./mapAsync.js";
 import { parseItemArray } from "./parseItemArray.js";
 import { GetItemList, SetItemList } from "./table.js";
@@ -27,20 +29,33 @@ export const getItemsRoute =
   ): RequestHandler =>
   async (req, res) => {
     const auth = await authFromToken(req.headers.authorization);
-    const query = getObjectFromQueryString(getQueryStringFromUrl(req.url));
+    const queryString = getQueryStringFromUrl(req.url);
+    const query = getObjectFromQueryString(queryString);
     const options = toDbQueryOptions(
       tryCatch(
         () => GetQueryOptions.parse(query),
         throwStatus422Unprocessable("getItemsRouteE1"),
       ),
     );
-    const filter = tryCatch(
-      () => toItem(query as any),
-      throwStatus422Unprocessable("getItemsRouteE2"),
-    );
-    const columns = Object.keys(filter) as (keyof A)[];
 
-    const { rows, count, offset } = await getItemList(filter, auth, {
+    const queryForFilters = getValuesFromQueryString(queryString);
+    Object.keys(queryForFilters).forEach((key) => {
+      if (key.startsWith("_")) {
+        delete queryForFilters[key];
+      }
+    });
+
+    const filterObjects = cartesianObject(queryForFilters, 100);
+
+    const filters = filterObjects.map((filterObject) =>
+      tryCatch(
+        () => toItem(filterObject as any),
+        throwStatus422Unprocessable("getItemsRouteE2"),
+      ),
+    );
+    const columns = Object.keys(queryForFilters) as (keyof A)[];
+
+    const { rows, count, offset } = await getItemList(filters, auth, {
       ...options,
       columns,
     });
