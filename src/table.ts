@@ -260,9 +260,9 @@ export async function getItemList<D extends ApiItemDb>(
     : {};
 
   const authWhere = (
-    !auth
-      ? {}
-      : { [Op.or]: [{ companyId: auth.CompanyId }, { companyId: null }] }
+    auth?.CompanyId
+      ? { [Op.or]: [{ companyId: auth.CompanyId }, { companyId: null }] }
+      : {}
   ) as WhereOptions<D>;
 
   const fromWhere = (
