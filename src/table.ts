@@ -453,7 +453,6 @@ export async function setItem<D extends ApiItemDb>(
   const write = dropUndefined(
     toItem({
       id: randId(),
-      companyId: auth?.CompanyId,
       updatedAt: unixTimestamp(),
       ...dropUndefined(item),
       authorId: auth?.id,
