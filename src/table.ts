@@ -29,6 +29,7 @@ import {
 } from "./Error.js";
 import { GenericError } from "./GenericError.js";
 import { findMissingForeignKeys } from "./getSequelizeErrorData.js";
+import { OnBatchError } from "./OnBatchError.js";
 import { SequelizeError } from "./SequelizeError.js";
 import { ConvertItem } from "./types.js";
 import { unixTimestamp } from "./unixTimestamp.js";
@@ -103,6 +104,7 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
   ) => Partial<A> | Promise<Partial<A>>,
   canUserReadItem?: CanUserReadItem<D>,
   canUserWriteItem?: CanUserWriteItem<D>,
+  onBatchError?: OnBatchError<D>,
 ) => ({
   getList: getItemListType(
     toItem,
@@ -118,6 +120,7 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     model,
     randId,
     canUserWriteItem,
+    onBatchError,
   ),
   delList: delItemListType(
     toItem,
@@ -126,6 +129,7 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     model,
     randId,
     canUserWriteItem,
+    onBatchError,
   ),
 });
 
@@ -356,23 +360,31 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
   model: ModelStatic<Model<D>>,
   randId?: () => number,
   canUserWriteItem?: CanUserWriteItem<D>,
+  onBatchError?: OnBatchError<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
   mustNotAddKeysNotInInput(toDbItem),
-  async (items: A[], auth?: Auth) =>
-    (
-      await setItemList(
-        toItem,
-        model,
-        await z.any().array().parse(items).map(toDbItem),
-        auth,
-        randId,
-        canUserWriteItem,
-      ).catch((e) => {
-        throw e instanceof GenericError ? convertErrorData(toApiItem, e) : e;
-      })
-    ).map((v) => (v === null ? null : dropUndefined(toApiItem(v))))
+  async (items: A[], auth?: Auth) => {
+    const dbItems = await z.any().array().parse(items).map(toDbItem);
+
+    const results = await setItemList(
+      toItem,
+      model,
+      dbItems,
+      auth,
+      randId,
+      canUserWriteItem,
+    );
+
+    return await logAndReturnResults<A, D>(
+      results,
+      onBatchError,
+      model,
+      dbItems,
+      toApiItem,
+    );
+  }
 );
 
 const convertErrorData = <A extends ApiItem, D extends ApiItemDb>(
@@ -391,28 +403,36 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
   model: ModelStatic<Model<D>>,
   randId?: () => number,
   canUserWriteItem?: CanUserWriteItem<D>,
+  onBatchError?: OnBatchError<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
   mustNotAddKeysNotInInput(toDbItem),
-  async (items: A[], auth?: Auth) =>
-    (
-      await setItemList(
-        toItem,
-        model,
-        await z
-          .any()
-          .array()
-          .parse(items)
-          .map(toDbItem)
-          .map((v) => ({ ...v, deletedAt: unixTimestamp() })),
-        auth,
-        randId,
-        canUserWriteItem,
-      ).catch((e) => {
-        throw e instanceof GenericError ? convertErrorData(toApiItem, e) : e;
-      })
-    ).map((v) => (v === null ? null : dropUndefined(toApiItem(v))))
+  async (items: A[], auth?: Auth) => {
+    const dbItems = await z
+      .any()
+      .array()
+      .parse(items)
+      .map(toDbItem)
+      .map((v) => ({ ...v, deletedAt: unixTimestamp() }));
+
+    const results = await setItemList(
+      toItem,
+      model,
+      dbItems,
+      auth,
+      randId,
+      canUserWriteItem,
+    );
+
+    return await logAndReturnResults<A, D>(
+      results,
+      onBatchError,
+      model,
+      dbItems,
+      toApiItem,
+    );
+  }
 );
 
 export const setItemList = async <A extends ApiItem, D extends ApiItemDb>(
@@ -422,10 +442,39 @@ export const setItemList = async <A extends ApiItem, D extends ApiItemDb>(
   auth?: Auth,
   randId?: () => number,
   canUserWriteItem?: CanUserWriteItem<D>,
-): Promise<(D | null)[]> =>
+): Promise<{ value?: D | null; error?: unknown }[]> =>
   asyncMap(topologicalSortItems(items), (item) =>
-    setItem(toItem, model, item, auth, randId, canUserWriteItem),
+    setItem(toItem, model, item, auth, randId, canUserWriteItem)
+      .then((value) => ({ value }))
+      .catch((error) => ({ error })),
   );
+
+async function logAndReturnResults<A extends ApiItem, D extends ApiItemDb>(
+  results: { value?: D | null | undefined; error?: unknown }[],
+  onBatchError: OnBatchError<D> | undefined,
+  model: ModelStatic<Model<D, D>>,
+  dbItems: D[],
+  toApiItem: ConvertItem<A, D>,
+) {
+  const hasErrors = results.filter((v) => v.error).length > 0;
+
+  if (hasErrors && onBatchError)
+    await onBatchError({
+      modelName: model.name,
+      items: dbItems,
+      results: results.map(({ value, error }) => ({
+        value,
+        error:
+          error instanceof GenericError
+            ? convertErrorData(toApiItem, error)
+            : error,
+      })),
+    });
+
+  return results.map((v) =>
+    v.value ? dropUndefined(toApiItem(v.value)) : null,
+  );
+}
 
 export async function setItem<D extends ApiItemDb>(
   toItem: ConvertItem<D>,

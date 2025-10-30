@@ -13,3 +13,4 @@ export { Auth } from "./Auth.js";
 
 export * from "./Error.js";
 export * from "./GenericError.js";
+export * from "./OnBatchError.js";
