@@ -22,7 +22,7 @@ export class NotAuthorizedError extends GenericError {
 export class ForbiddenError extends GenericError {
   constructor(
     code,
-    { stack = "", data = undefined, message = "Forbidden" } = {},
+    { stack = "", data = undefined as any, message = "Forbidden" } = {},
   ) {
     super(code, {
       name: "Forbidden",
