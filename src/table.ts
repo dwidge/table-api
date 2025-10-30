@@ -21,7 +21,12 @@ import { z } from "zod";
 import { ApiItem, ApiItemDb } from "./ApiItem.js";
 import { Auth } from "./Auth.js";
 import { catchSequelize } from "./catchError.js";
-import { ConflictError, NotAuthorizedError, NotFoundError } from "./Error.js";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotAuthorizedError,
+  NotFoundError,
+} from "./Error.js";
 import { GenericError } from "./GenericError.js";
 import { findMissingForeignKeys } from "./getSequelizeErrorData.js";
 import { SequelizeError } from "./SequelizeError.js";
@@ -442,7 +447,7 @@ export async function setItem<D extends ApiItemDb>(
     )?.toJSON();
 
     if (one && !canUserWriteItem(one, auth))
-      throw new NotAuthorizedError("setItemE2", {
+      throw new ForbiddenError("setItemE2", {
         data: {
           item: { companyId: one.companyId },
           auth: { companyId: auth?.CompanyId },
