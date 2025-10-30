@@ -29,7 +29,7 @@ import {
 } from "./Error.js";
 import { GenericError } from "./GenericError.js";
 import { findMissingForeignKeys } from "./getSequelizeErrorData.js";
-import { OnBatchError } from "./OnBatchError.js";
+import { OnBatchSet } from "./OnBatchSet.js";
 import { SequelizeError } from "./SequelizeError.js";
 import { ConvertItem } from "./types.js";
 import { unixTimestamp } from "./unixTimestamp.js";
@@ -104,7 +104,7 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
   ) => Partial<A> | Promise<Partial<A>>,
   canUserReadItem?: CanUserReadItem<D>,
   canUserWriteItem?: CanUserWriteItem<D>,
-  onBatchError?: OnBatchError<D>,
+  onBatchError?: OnBatchSet<D>,
 ) => ({
   getList: getItemListType(
     toItem,
@@ -360,7 +360,7 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
   model: ModelStatic<Model<D>>,
   randId?: () => number,
   canUserWriteItem?: CanUserWriteItem<D>,
-  onBatchError?: OnBatchError<D>,
+  onBatchSet?: OnBatchSet<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
@@ -379,7 +379,7 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
 
     return await logAndReturnResults<A, D>(
       results,
-      onBatchError,
+      onBatchSet,
       model,
       dbItems,
       toApiItem,
@@ -403,7 +403,7 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
   model: ModelStatic<Model<D>>,
   randId?: () => number,
   canUserWriteItem?: CanUserWriteItem<D>,
-  onBatchError?: OnBatchError<D>,
+  onBatchSet?: OnBatchSet<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
@@ -427,7 +427,7 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
 
     return await logAndReturnResults<A, D>(
       results,
-      onBatchError,
+      onBatchSet,
       model,
       dbItems,
       toApiItem,
@@ -451,25 +451,22 @@ export const setItemList = async <A extends ApiItem, D extends ApiItemDb>(
 
 async function logAndReturnResults<A extends ApiItem, D extends ApiItemDb>(
   results: { value?: D | null | undefined; error?: unknown }[],
-  onBatchError: OnBatchError<D> | undefined,
+  onBatchSet: OnBatchSet<D> | undefined,
   model: ModelStatic<Model<D, D>>,
   dbItems: D[],
   toApiItem: ConvertItem<A, D>,
 ) {
-  const hasErrors = results.filter((v) => v.error).length > 0;
-
-  if (hasErrors && onBatchError)
-    await onBatchError({
-      modelName: model.name,
-      items: dbItems,
-      results: results.map(({ value, error }) => ({
-        value,
-        error:
-          error instanceof GenericError
-            ? convertErrorData(toApiItem, error)
-            : error,
-      })),
-    });
+  await onBatchSet?.(
+    model.name,
+    dbItems,
+    results.map(({ value, error }) => ({
+      value,
+      error:
+        error instanceof GenericError
+          ? convertErrorData(toApiItem, error)
+          : error,
+    })),
+  );
 
   return results.map((v) =>
     v.value ? dropUndefined(toApiItem(v.value)) : null,
