@@ -1,7 +1,7 @@
-import { ApiItemDb } from "./ApiItem.js";
+import { ApiItem } from "./ApiItem.js";
 
-export type OnBatchSet<D extends ApiItemDb> = (
+export type OnBatchSet<A extends ApiItem> = (
   table: string,
-  items: D[],
-  results: { value?: D | null; error?: unknown }[],
+  items: A[],
+  results: { value?: A | null; error?: unknown }[],
 ) => void | Promise<void>;

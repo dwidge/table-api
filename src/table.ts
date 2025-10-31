@@ -48,8 +48,16 @@ export type GetItemList<A> = (
   auth?: Auth,
   options?: DbQueryOptions & { columns?: (keyof A)[] },
 ) => Promise<{ rows: A[]; count: number; offset: number }>;
-export type SetItemList<A> = (items: A[], auth?: Auth) => Promise<(A | null)[]>;
-export type DetItemList<A> = (items: A[], auth?: Auth) => Promise<(A | null)[]>;
+export type SetItemList<A extends ApiItem> = (
+  items: A[],
+  auth?: Auth,
+  postHook?: OnBatchSet<A>,
+) => Promise<(A | null)[]>;
+export type DetItemList<A extends ApiItem> = (
+  items: A[],
+  auth?: Auth,
+  postHook?: OnBatchSet<A>,
+) => Promise<(A | null)[]>;
 
 type FindAndCountAll = <T>(options: {
   where: T;
@@ -104,7 +112,6 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
   ) => Partial<A> | Promise<Partial<A>>,
   canUserReadItem?: CanUserReadItem<D>,
   canUserWriteItem?: CanUserWriteItem<D>,
-  onBatchError?: OnBatchSet<D>,
 ) => ({
   getList: getItemListType(
     toItem,
@@ -120,7 +127,6 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     model,
     randId,
     canUserWriteItem,
-    onBatchError,
   ),
   delList: delItemListType(
     toItem,
@@ -129,7 +135,6 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     model,
     randId,
     canUserWriteItem,
-    onBatchError,
   ),
 });
 
@@ -360,12 +365,11 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
   model: ModelStatic<Model<D>>,
   randId?: () => number,
   canUserWriteItem?: CanUserWriteItem<D>,
-  onBatchSet?: OnBatchSet<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
   mustNotAddKeysNotInInput(toDbItem),
-  async (items: A[], auth?: Auth) => {
+  async (items: A[], auth?: Auth, postHook?: OnBatchSet<A>) => {
     const dbItems = await z.any().array().parse(items).map(toDbItem);
 
     const results = await setItemList(
@@ -379,10 +383,10 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
 
     return await logAndReturnResults<A, D>(
       results,
-      onBatchSet,
       model,
-      dbItems,
+      items,
       toApiItem,
+      postHook,
     );
   }
 );
@@ -403,12 +407,11 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
   model: ModelStatic<Model<D>>,
   randId?: () => number,
   canUserWriteItem?: CanUserWriteItem<D>,
-  onBatchSet?: OnBatchSet<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
   mustNotAddKeysNotInInput(toDbItem),
-  async (items: A[], auth?: Auth) => {
+  async (items: A[], auth?: Auth, postHook?: OnBatchSet<A>) => {
     const dbItems = await z
       .any()
       .array()
@@ -427,10 +430,10 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
 
     return await logAndReturnResults<A, D>(
       results,
-      onBatchSet,
       model,
-      dbItems,
+      items,
       toApiItem,
+      postHook,
     );
   }
 );
@@ -449,18 +452,31 @@ export const setItemList = async <A extends ApiItem, D extends ApiItemDb>(
       .catch((error) => ({ error })),
   );
 
+export const onBatchThrowFirstError = async <A extends ApiItem>(
+  table,
+  items,
+  results,
+) => {
+  const errors = results.filter((v) => v.error).map((v) => v.error);
+
+  if (errors.length === 0) return;
+
+  const [firstError] = errors;
+  throw firstError;
+};
+
 async function logAndReturnResults<A extends ApiItem, D extends ApiItemDb>(
   results: { value?: D | null | undefined; error?: unknown }[],
-  onBatchSet: OnBatchSet<D> | undefined,
   model: ModelStatic<Model<D, D>>,
-  dbItems: D[],
+  dbItems: A[],
   toApiItem: ConvertItem<A, D>,
+  onBatchSet: OnBatchSet<A> = onBatchThrowFirstError,
 ) {
-  await onBatchSet?.(
+  await onBatchSet(
     model.name,
     dbItems,
     results.map(({ value, error }) => ({
-      value,
+      value: value ? toApiItem(value) : value,
       error:
         error instanceof GenericError
           ? convertErrorData(toApiItem, error)

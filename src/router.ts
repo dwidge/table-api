@@ -19,6 +19,7 @@ import {
 } from "./cartesianObject.js";
 import { PayloadTooLargeError } from "./Error.js";
 import { mapAsync } from "./mapAsync.js";
+import { OnBatchSet } from "./OnBatchSet.js";
 import { parseItemArray } from "./parseItemArray.js";
 import { GetItemList, SetItemList } from "./table.js";
 import { throwStatus422Unprocessable } from "./throwStatus422Unprocessable.js";
@@ -88,6 +89,7 @@ export const setItemsRoute =
     authFromToken: (token?: string) => Promise<Auth | undefined>,
     hook?: (rows: (A | null)[]) => Promise<(A | null)[]>,
     preHook?: (row: A) => Promise<A>,
+    postHook?: OnBatchSet<A>,
   ): RequestHandler =>
   async (req, res) => {
     const inputItems = tryCatch(
@@ -97,6 +99,7 @@ export const setItemsRoute =
     const rows = await setItemList(
       await mapAsync(preHook ?? (async (v) => v), inputItems),
       await authFromToken(req.headers.authorization),
+      postHook,
     );
 
     const newRows = hook ? await hook(rows) : rows;

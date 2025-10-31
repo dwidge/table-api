@@ -22,5 +22,12 @@ export const ApiItemDb = z
   })
   .partial();
 
-export type ApiItem = Partial<{ id: string | number }>;
+export type ApiItem = Partial<{
+  id?: string | number;
+  // authorId?: string | number | null;
+  // companyId?: string | number | null;
+  // createdAt?: number | null;
+  // updatedAt?: number;
+  // deletedAt?: number | null;
+}>;
 export type ApiItemDb = z.infer<typeof ApiItemDb>;
