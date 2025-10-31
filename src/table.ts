@@ -6,7 +6,7 @@ import {
 } from "@dwidge/query-axios-zod";
 import { Expand, randInt50 } from "@dwidge/randid";
 import { traceAsync } from "@dwidge/trace-js";
-import { asyncMap, topologicalSortItems } from "@dwidge/utils-js";
+import { asyncMap, notNull, topologicalSortItems } from "@dwidge/utils-js";
 import {
   ForeignKeyConstraintError,
   Model,
@@ -479,9 +479,9 @@ async function logAndReturnResults<A extends ApiItem, D extends ApiItemDb>(
     })),
   );
 
-  return results.map((v) =>
-    v.value ? dropUndefined(toApiItem(v.value)) : null,
-  );
+  return results
+    .map((v) => (v.value ? dropUndefined(toApiItem(v.value)) : null))
+    .filter(notNull);
 }
 
 export async function setItem<D extends ApiItemDb>(
