@@ -1,8 +1,9 @@
 export { delItemsRoute, getItemsRoute, setItemsRoute } from "./router.js";
 export {
   useItemDb,
+  type AssertCanUserWriteItem,
   type CanUserReadItem,
-  type CanUserWriteItem,
+  type AssertCanUserWriteItem as CanUserWriteItem,
   type DetItemList,
   type GetItemList,
   type SetItemList,

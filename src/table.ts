@@ -33,10 +33,10 @@ export type CanUserReadItem<D extends ApiItemDb> = (
   item: D,
   auth?: Auth,
 ) => boolean;
-export type CanUserWriteItem<D extends ApiItemDb> = (
+export type AssertCanUserWriteItem<D extends ApiItemDb> = (
   item: D,
   auth?: Auth,
-) => boolean;
+) => void;
 
 export type GetItemList<A> = (
   filter: Partial<A> | Partial<A>[],
@@ -106,7 +106,7 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     auth?: Auth,
   ) => Partial<A> | Promise<Partial<A>>,
   canUserReadItem?: CanUserReadItem<D>,
-  canUserWriteItem?: CanUserWriteItem<D>,
+  assertCanUserWriteItem?: AssertCanUserWriteItem<D>,
 ) => ({
   getList: getItemListType(
     toItem,
@@ -121,7 +121,7 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     toDbItem,
     model,
     randId,
-    canUserWriteItem,
+    assertCanUserWriteItem,
   ),
   delList: delItemListType(
     toItem,
@@ -129,7 +129,7 @@ export const useItemDb = <A extends ApiItem, D extends ApiItemDb>(
     toDbItem,
     model,
     randId,
-    canUserWriteItem,
+    assertCanUserWriteItem,
   ),
 });
 
@@ -359,7 +359,7 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
   toDbItem: ConvertItem<D, A>,
   model: ModelStatic<Model<D>>,
   randId?: () => number,
-  canUserWriteItem?: CanUserWriteItem<D>,
+  assertCanUserWriteItem?: AssertCanUserWriteItem<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
@@ -373,7 +373,7 @@ export const setItemListType = <A extends ApiItem, D extends ApiItemDb>(
       dbItems,
       auth,
       randId,
-      canUserWriteItem,
+      assertCanUserWriteItem,
     );
 
     return await logAndReturnResults<A, D>(
@@ -401,7 +401,7 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
   toDbItem: ConvertItem<D, A>,
   model: ModelStatic<Model<D>>,
   randId?: () => number,
-  canUserWriteItem?: CanUserWriteItem<D>,
+  assertCanUserWriteItem?: AssertCanUserWriteItem<D>,
 ) => (
   mustNotAddKeysNotInInput(toItem),
   mustNotAddKeysNotInInput(toApiItem),
@@ -420,7 +420,7 @@ export const delItemListType = <A extends ApiItem, D extends ApiItemDb>(
       dbItems,
       auth,
       randId,
-      canUserWriteItem,
+      assertCanUserWriteItem,
     );
 
     return await logAndReturnResults<A, D>(
@@ -439,10 +439,10 @@ export const setItemList = async <A extends ApiItem, D extends ApiItemDb>(
   items: D[],
   auth?: Auth,
   randId?: () => number,
-  canUserWriteItem?: CanUserWriteItem<D>,
+  assertCanUserWriteItem?: AssertCanUserWriteItem<D>,
 ): Promise<{ value?: D | null; error?: unknown }[]> =>
   asyncMap(topologicalSortItems(items), (item) =>
-    setItem(toItem, model, item, auth, randId, canUserWriteItem)
+    setItem(toItem, model, item, auth, randId, assertCanUserWriteItem)
       .then((value) => ({ value }))
       .catch((error) => ({ error })),
   );
@@ -490,7 +490,7 @@ export async function setItem<D extends ApiItemDb>(
   partial: D,
   auth?: Auth,
   randId = () => randInt50(),
-  canUserWriteItem: CanUserWriteItem<D> = canUserWriteItemDefault,
+  assertCanUserWriteItem: AssertCanUserWriteItem<D> = assertCanUserWriteItemDefault,
 ): Promise<D | null> {
   auth = Auth.optional().parse(auth);
 
@@ -506,30 +506,18 @@ export async function setItem<D extends ApiItemDb>(
         )?.toJSON()
       : undefined;
 
-  if (old && !canUserWriteItem(old, auth))
-    throw new ForbiddenError("setItemE2", {
-      data: {
-        item: { companyId: old.companyId },
-        auth: { companyId: auth?.CompanyId },
-      },
-    });
+  if (old) assertCanUserWriteItem(old, auth);
 
   const write = dropUndefined(
     toItem({
       id: randId(),
-      ...dropUndefined({ ...old, ...partial }),
+      ...dropUndefined(old ?? {}),
+      ...dropUndefined(partial),
       updatedAt: unixTimestamp(),
       authorId: auth?.id,
     }),
   );
-
-  if (!canUserWriteItem(write, auth))
-    throw new ForbiddenError("setItemE3", {
-      data: {
-        item: { companyId: write.companyId },
-        auth: { companyId: auth?.CompanyId },
-      },
-    });
+  assertCanUserWriteItem(write, auth);
 
   try {
     const result = old
@@ -584,8 +572,15 @@ const canUserReadItemDefault = <D extends ApiItemDb>(
 ): boolean =>
   !auth || item.companyId === null || item.companyId === auth.CompanyId;
 
-const canUserWriteItemDefault = <D extends ApiItemDb>(
+const assertCanUserWriteItemDefault = <D extends ApiItemDb>(
   item: D,
   auth?: Auth,
-): boolean =>
-  !auth || (item.companyId !== null && item.companyId === auth.CompanyId);
+): void => {
+  if (auth && item.companyId !== auth.CompanyId)
+    throw new ForbiddenError("setItemE2", {
+      data: {
+        item: { companyId: item.companyId },
+        auth: { companyId: auth.CompanyId },
+      },
+    });
+};
