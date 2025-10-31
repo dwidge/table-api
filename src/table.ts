@@ -21,12 +21,7 @@ import { z } from "zod";
 import { ApiItem, ApiItemDb } from "./ApiItem.js";
 import { Auth } from "./Auth.js";
 import { catchSequelize } from "./catchError.js";
-import {
-  ConflictError,
-  ForbiddenError,
-  NotAuthorizedError,
-  NotFoundError,
-} from "./Error.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "./Error.js";
 import { GenericError } from "./GenericError.js";
 import { findMissingForeignKeys } from "./getSequelizeErrorData.js";
 import { OnBatchSet } from "./OnBatchSet.js";
@@ -492,62 +487,58 @@ async function logAndReturnResults<A extends ApiItem, D extends ApiItemDb>(
 export async function setItem<D extends ApiItemDb>(
   toItem: ConvertItem<D>,
   model: ModelStatic<Model<D>>,
-  item: D,
+  partial: D,
   auth?: Auth,
   randId = () => randInt50(),
   canUserWriteItem: CanUserWriteItem<D> = canUserWriteItemDefault,
 ): Promise<D | null> {
   auth = Auth.optional().parse(auth);
 
-  if (item.id != null) {
-    const one = (
-      await model
-        .findOne({
-          where: dropUndefined({ id: item.id }) as WhereOptions<D>,
-        })
-        .catch(catchSequelize("setItemE1"))
-    )?.toJSON();
+  const id = partial.id;
+  const old =
+    id != null
+      ? (
+          await model
+            .findOne({
+              where: dropUndefined({ id }) as WhereOptions<D>,
+            })
+            .catch(catchSequelize("setItemE1"))
+        )?.toJSON()
+      : undefined;
 
-    if (one && !canUserWriteItem(one, auth))
-      throw new ForbiddenError("setItemE2", {
-        data: {
-          item: { companyId: one.companyId },
-          auth: { companyId: auth?.CompanyId },
-        },
-      });
-  }
+  if (old && !canUserWriteItem(old, auth))
+    throw new ForbiddenError("setItemE2", {
+      data: {
+        item: { companyId: old.companyId },
+        auth: { companyId: auth?.CompanyId },
+      },
+    });
 
   const write = dropUndefined(
     toItem({
       id: randId(),
+      ...dropUndefined({ ...old, ...partial }),
       updatedAt: unixTimestamp(),
-      ...dropUndefined(item),
       authorId: auth?.id,
     }),
   );
 
   if (!canUserWriteItem(write, auth))
-    throw new NotAuthorizedError("setItemE3", {
+    throw new ForbiddenError("setItemE3", {
       data: {
         item: { companyId: write.companyId },
         auth: { companyId: auth?.CompanyId },
       },
     });
 
-  const existing = (
-    await model.findAll({ where: { id: write.id } as WhereOptions<D> })
-  )
-    .map((v) => v.toJSON())
-    .map(toItem)[0];
-
   try {
-    const result = existing
+    const result = old
       ? (await model
           .update(write as any, {
-            where: { id: existing.id } as WhereOptions<D>,
+            where: { id: old.id } as WhereOptions<D>,
           })
           .catch(catchSequelize2("setItemE4", model, write)),
-        existing)
+        write)
       : (
           await model
             .create({
