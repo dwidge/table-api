@@ -1,6 +1,6 @@
 {
   "name": "@dwidge/table-api",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dwidge/table-api.git"
@@ -26,7 +26,7 @@
   "peerDependencies": {
     "@dwidge/query-axios-zod": "^0.0.18",
     "@dwidge/randid": "^0.0.9",
-    "@dwidge/trace-js": "^0.0.13",
+    "@dwidge/trace-js": "^0.0.14",
     "@dwidge/utils-js": "^0.0.26",
     "axios": "^1.7.7",
     "express": "^4.21.1",
