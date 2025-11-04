@@ -463,13 +463,22 @@ export const onBatchThrowFirstError = async <A extends ApiItem>(
 async function logAndReturnResults<A extends ApiItem, D extends ApiItemDb>(
   results: { value?: D | null | undefined; error?: unknown }[],
   model: ModelStatic<Model<D, D>>,
-  dbItems: A[],
+  items: A[],
   toApiItem: ConvertItem<A, D>,
   onBatchSet: OnBatchSet<A> = onBatchThrowFirstError,
 ) {
+  const details = results.map((v, i) => ({
+    item: items[i]!,
+    value: v.value ? toApiItem(v.value) : v.value,
+    error: v.error,
+  }));
+  const { failed = [], passed = [] } = Object.groupBy(details, (v) =>
+    v.error ? "failed" : "passed",
+  );
+
   await onBatchSet(
     model.name,
-    dbItems,
+    items,
     results.map(({ value, error }) => ({
       value: value ? toApiItem(value) : value,
       error:
@@ -477,6 +486,8 @@ async function logAndReturnResults<A extends ApiItem, D extends ApiItemDb>(
           ? convertErrorData(toApiItem, error)
           : error,
     })),
+    failed,
+    passed,
   );
 
   return results
