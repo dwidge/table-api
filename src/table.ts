@@ -569,7 +569,10 @@ const catchSequelize2 =
     value: object,
   ) =>
   async (error: unknown) => {
-    if (error instanceof UniqueConstraintError) {
+    if (
+      error instanceof UniqueConstraintError ||
+      `${error}`.includes("UniqueConstraintError")
+    ) {
       throw new ConflictError(code, { value });
     } else if (error instanceof ForeignKeyConstraintError) {
       const missing = await findMissingForeignKeys(model, value);
